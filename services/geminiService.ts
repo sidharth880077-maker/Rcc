@@ -21,16 +21,18 @@ export const getStudentPerformanceInsights = async (
   `;
 
   try {
-    // Fix: Always initialize GoogleGenAI inside the function using process.env.API_KEY directly
+    // Initialize inside the function as requested
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // Fix: Use the .text property directly instead of calling it as a method
-    return response.text || "Insight generation failed.";
+    
+    // Accessing .text as a property (not a method)
+    const text = response.text;
+    return text || "Insight generation failed.";
   } catch (error) {
     console.error("Error generating insights:", error);
-    return "Error generating insights. Please check your API key.";
+    return "The AI analysis is currently unavailable. Please check the system environment configuration.";
   }
 };
