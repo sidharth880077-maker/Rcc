@@ -40,6 +40,7 @@ export interface PaymentRecord {
   description: string;
   transactionId?: string;
   paymentMethod?: string;
+  proofImage?: string; // Base64 encoded screenshot
 }
 
 export interface ScheduleItem {

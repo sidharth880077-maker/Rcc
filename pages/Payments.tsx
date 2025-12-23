@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, PaymentRecord } from '../types';
 import { storageService } from '../services/storageService';
 import { useNavigate } from 'react-router-dom';
@@ -11,13 +11,19 @@ interface PaymentsProps {
 const Payments: React.FC<PaymentsProps> = ({ user }) => {
   const isTeacher = user.role === UserRole.TEACHER;
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [payments, setPayments] = useState<PaymentRecord[]>([]);
   const [students, setStudents] = useState<User[]>([]);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [showDelinquentModal, setShowDelinquentModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'UPI' | 'NET'>('UPI');
   const [filterStudentId, setFilterStudentId] = useState<string>('all');
+  const [proofImage, setProofImage] = useState<string | null>(null);
+  const [viewingProof, setViewingProof] = useState<string | null>(null);
+  const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+
+  const currentMonthName = new Date().toLocaleString('default', { month: 'long' });
+  const currentMonthKey = new Date().toISOString().slice(0, 7); 
 
   useEffect(() => {
     setPayments(storageService.getPayments());
@@ -35,28 +41,41 @@ const Payments: React.FC<PaymentsProps> = ({ user }) => {
   const targetFees = isTeacher ? 180000 : 60000;
   const progressPercent = Math.min(100, (totalPaid / targetFees) * 100);
 
-  // Revenue calc
-  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const thisMonthRevenue = payments
-    .filter(p => p.status === 'SUCCESS' && p.date.startsWith(currentMonth))
-    .reduce((acc, p) => acc + p.amount, 0);
-
-  const totalLifetimeRevenue = payments
-    .filter(p => p.status === 'SUCCESS')
-    .reduce((acc, p) => acc + p.amount, 0);
-
-  // Delinquent logic
   const delinquentStudents = students.filter(s => {
-    const hasPaidThisMonth = payments.some(p => p.studentId === s.id && p.status === 'SUCCESS' && p.date.startsWith(currentMonth));
+    const hasPaidThisMonth = payments.some(p => p.studentId === s.id && p.status === 'SUCCESS' && p.date.startsWith(currentMonthKey));
     const hasPending = payments.some(p => p.studentId === s.id && p.status === 'PENDING');
-    return !hasPaidThisMonth || hasPending;
+    return !hasPaidThisMonth && !hasPending;
   });
 
-  // Individual student due status
-  const isStudentDelinquent = !payments.some(p => p.studentId === user.id && p.status === 'SUCCESS' && p.date.startsWith(currentMonth));
+  const isStudentDelinquent = !payments.some(p => p.studentId === user.id && p.status === 'SUCCESS' && p.date.startsWith(currentMonthKey));
   const hasStudentPendingApproval = payments.some(p => p.studentId === user.id && p.status === 'PENDING');
 
-  const handlePay = () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProofImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSendReminder = (studentId: string) => {
+    setSendingReminder(studentId);
+    storageService.sendAutomatedReminder(studentId, currentMonthName);
+    setTimeout(() => {
+      setSendingReminder(null);
+      alert("Reminder sent to student's inbox.");
+    }, 800);
+  };
+
+  const handleUploadProof = () => {
+    if (!proofImage) {
+      alert("Please select a screenshot first.");
+      return;
+    }
+
     setPaying(true);
     setTimeout(() => {
       const newPayment: PaymentRecord = {
@@ -64,17 +83,19 @@ const Payments: React.FC<PaymentsProps> = ({ user }) => {
         studentId: user.id,
         amount: 5000,
         date: new Date().toISOString().split('T')[0],
-        status: 'SUCCESS',
-        description: `Monthly Fees - ${new Date().toLocaleString('default', { month: 'long' })}`,
+        status: 'PENDING',
+        description: `Monthly Fees - ${currentMonthName}`,
         transactionId: `TXN${Math.floor(Math.random() * 90000000 + 10000000)}`,
-        paymentMethod: paymentMethod === 'UPI' ? 'UPI / PhonePe' : 'Net Banking'
+        paymentMethod: 'UPI / Screenshot Upload',
+        proofImage: proofImage
       };
       const updated = [newPayment, ...payments];
       setPayments(updated);
       storageService.savePayments(updated);
       setPaying(false);
-      setShowCheckout(false);
-    }, 2000);
+      setShowUploadModal(false);
+      setProofImage(null);
+    }, 1500);
   };
 
   const handleApprove = (id: string) => {
@@ -105,412 +126,408 @@ const Payments: React.FC<PaymentsProps> = ({ user }) => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `RCC_Transactions_${isTeacher ? filterStudentId : user.name}.csv`);
+    link.setAttribute("download", `RCC_Transactions.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-8 max-w-6xl mx-auto pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900">Fees & Payments</h1>
-          <p className="text-slate-500">
-            {isTeacher ? 'Manage student finances and track revenue.' : 'Manage your fee payments and track history.'}
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight">Fees & Billing</h1>
+          <p className="text-slate-500 font-medium">
+            {isTeacher ? 'Manage student finances and verify payments.' : 'Track your tuition fees and payment history.'}
           </p>
         </div>
-        {!isTeacher && (
-          <button 
-            onClick={() => setShowCheckout(true)}
-            className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 transform active:scale-95"
-          >
-            Pay {new Date().toLocaleString('default', { month: 'long' })} Fees
-          </button>
-        )}
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Payment Progress Tracker */}
-        <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800">
-                {isTeacher ? 'Overall Collection' : 'My Fee Progress'}
-              </h2>
-              <p className="text-sm text-slate-500">Academic Session 2023-24</p>
+      {/* Main Stats and Action Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Progress Card */}
+        <section className="lg:col-span-2 bg-white p-10 rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-start mb-10">
+              <div>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+                  {isTeacher ? 'Annual Collection' : 'Personal Fee Progress'}
+                </h2>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">Session 2023-24</p>
+              </div>
+              <div className="text-right">
+                <span className="text-4xl font-black text-indigo-600 tracking-tighter">₹{totalPaid.toLocaleString()}</span>
+                <span className="text-slate-300 font-bold ml-2">/ ₹{targetFees.toLocaleString()}</span>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-2xl font-black text-indigo-600">₹{totalPaid.toLocaleString()}</span>
-              <span className="text-slate-400 font-medium"> / ₹{targetFees.toLocaleString()}</span>
+            
+            <div className="relative w-full h-6 bg-slate-100 rounded-full overflow-hidden mb-6">
+              <div 
+                className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 transition-all duration-1000 ease-out rounded-full shadow-lg"
+                style={{ width: `${progressPercent}%` }}
+              ></div>
             </div>
-          </div>
-          
-          <div className="relative w-full h-4 bg-slate-100 rounded-full overflow-hidden">
-            <div 
-              className="absolute top-0 left-0 h-full bg-gradient-to-r from-indigo-500 to-indigo-600 transition-all duration-1000 ease-out rounded-full"
-              style={{ width: `${progressPercent}%` }}
-            ></div>
-          </div>
-          
-          <div className="flex justify-between mt-3 text-xs font-bold text-slate-400">
-            <span>Progress</span>
-            <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">{Math.round(progressPercent)}% Paid</span>
-            <span>{isTeacher ? 'Total Goal' : 'Annual Fee'}</span>
+            
+            <div className="flex justify-between text-xs font-black text-slate-400 uppercase tracking-widest">
+              <span>Goal Progress</span>
+              <span className="text-indigo-600 bg-indigo-50 px-4 py-1.5 rounded-full">{Math.round(progressPercent)}% Cleared</span>
+            </div>
           </div>
         </section>
 
-        {isTeacher ? (
-          <section className="bg-indigo-900 p-8 rounded-3xl shadow-xl text-white flex flex-col justify-center relative overflow-hidden">
-            <div className="relative z-10">
-              <p className="text-indigo-300 font-bold uppercase text-xs tracking-widest mb-1">Monthly Revenue ({new Date().toLocaleString('default', { month: 'long' })})</p>
-              <h2 className="text-4xl font-black mb-2">₹{thisMonthRevenue.toLocaleString()}</h2>
-              <p className="text-indigo-400 text-sm font-medium">Total Lifetime: ₹{totalLifetimeRevenue.toLocaleString()}</p>
-              
-              <div className="mt-4 flex gap-4">
-                <div className="bg-white/10 p-3 rounded-xl flex-1 backdrop-blur-sm">
-                  <p className="text-[10px] uppercase font-bold text-indigo-200">Awaiting Appr.</p>
-                  <p className="text-lg font-bold">₹{payments.filter(p => p.status === 'PENDING').reduce((a,c) => a+c.amount,0).toLocaleString()}</p>
-                </div>
-                <div className="bg-white/10 p-3 rounded-xl flex-1 backdrop-blur-sm">
-                  <p className="text-[10px] uppercase font-bold text-indigo-200">Transactions</p>
-                  <p className="text-lg font-bold">{payments.filter(p => p.status === 'SUCCESS').length}</p>
-                </div>
-              </div>
-            </div>
-            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-          </section>
-        ) : (
-          <section className={`p-8 rounded-3xl shadow-xl flex flex-col justify-center relative overflow-hidden transition-all ${isStudentDelinquent ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}>
-             <div className="relative z-10">
-               <p className="text-white/70 font-bold uppercase text-xs tracking-widest mb-1">Current Status</p>
-               <h2 className="text-4xl font-black mb-2">
-                 {isStudentDelinquent ? 'Dues Pending' : 'No Current Dues'}
-               </h2>
-               <p className="text-white/80 text-sm font-medium">
-                 {isStudentDelinquent 
-                    ? `Please clear ₹5,000 for ${new Date().toLocaleString('default', { month: 'long' })}.` 
-                    : `You have cleared all payments for this month.`}
-               </p>
-               {hasStudentPendingApproval && (
-                 <div className="mt-4 bg-white/20 p-4 rounded-2xl backdrop-blur-sm border border-white/10">
-                   <p className="text-xs font-bold uppercase text-white/90 mb-1">Payment Under Verification</p>
-                   <p className="text-sm font-medium">Your last transaction is being verified by RCC Admin.</p>
+        {/* Dynamic Status / Reminder Card */}
+        <section className={`p-10 rounded-[3rem] shadow-2xl flex flex-col justify-between relative overflow-hidden transition-all duration-500 ${
+          isTeacher ? 'bg-indigo-900 text-white' : 
+          isStudentDelinquent ? 'bg-red-600 text-white' : 'bg-emerald-600 text-white'
+        }`}>
+          <div className="relative z-10">
+            <p className="text-white/60 font-black uppercase text-[10px] tracking-[0.3em] mb-3">
+              {isTeacher ? 'System Revenue' : 'Billing Status'}
+            </p>
+            <h2 className="text-4xl font-black mb-4 tracking-tighter">
+              {isTeacher ? `₹${payments.filter(p => p.status === 'SUCCESS').reduce((a,c) => a+c.amount,0).toLocaleString()}` : 
+               isStudentDelinquent ? 'Dues Pending' : 'Account Current'}
+            </h2>
+            <p className="text-white/80 text-sm font-medium leading-relaxed">
+              {isTeacher 
+                ? `${payments.filter(p => p.status === 'PENDING').length} payments waiting for your verification.` 
+                : isStudentDelinquent 
+                    ? `Please complete your ₹5,000 fee for ${currentMonthName}.` 
+                    : `Your ${currentMonthName} fees are paid. Thank you!`}
+            </p>
+          </div>
+          
+          <div className="mt-8 relative z-10">
+             {isTeacher ? (
+               <div className="bg-white/10 p-4 rounded-2xl backdrop-blur-md border border-white/10">
+                 <p className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Unpaid Students</p>
+                 <p className="text-2xl font-black">{delinquentStudents.length}</p>
+               </div>
+             ) : (
+               !isStudentDelinquent ? (
+                 <div className="bg-white/20 p-4 rounded-2xl border border-white/10 text-center font-black uppercase tracking-widest text-xs">
+                   Verified ✓
                  </div>
-               )}
-             </div>
-             <div className="absolute bottom-0 right-0 w-48 h-48 bg-white/10 rounded-full -mb-24 -mr-24 blur-3xl"></div>
-          </section>
-        )}
+               ) : (
+                 <button 
+                  onClick={() => setShowUploadModal(true)}
+                  className="w-full py-4 bg-white text-red-600 font-black rounded-2xl shadow-xl hover:scale-105 transition-transform active:scale-95"
+                 >
+                   Action Required
+                 </button>
+               )
+             )}
+          </div>
+          <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/4 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+        </section>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Transaction History */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <h2 className="text-lg font-bold text-slate-800">Payment History</h2>
-              
-              <div className="flex items-center gap-3">
-                {isTeacher && (
-                  <select 
-                    value={filterStudentId}
-                    onChange={(e) => setFilterStudentId(e.target.value)}
-                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                  >
-                    <option value="all">All Students</option>
-                    {students.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
-                )}
-                <button 
-                  onClick={exportTransactions}
-                  className="px-4 py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-xl hover:bg-indigo-100 transition-colors flex items-center border border-indigo-100"
-                >
-                  <span className="mr-2">📥</span> Download Statement
-                </button>
+      {/* Split Sections for Students */}
+      {!isTeacher && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Section 1: Online Payment Info */}
+          <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 space-y-8 animate-fade-in">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[1.5rem] flex items-center justify-center text-3xl font-black">1</div>
+              <div>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight">Online Payment</h3>
+                <p className="text-sm font-medium text-slate-400">Scan QR or use UPI to pay</p>
               </div>
+            </div>
+
+            <div className="p-8 bg-slate-900 rounded-[2rem] text-center space-y-6 relative overflow-hidden group">
+               <div className="relative z-10">
+                 <div className="bg-white p-4 rounded-3xl w-40 h-40 mx-auto shadow-2xl mb-6 flex items-center justify-center">
+                    <div className="text-slate-200 text-xs font-black uppercase tracking-tighter opacity-20">RCC QR CODE</div>
+                    {/* Placeholder for real QR */}
+                    <div className="absolute inset-0 flex items-center justify-center text-6xl opacity-10">📱</div>
+                 </div>
+                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-1">Official UPI ID</p>
+                 <p className="text-2xl font-black text-white tracking-tighter">raghubir.classes@ybl</p>
+                 <p className="text-xs text-slate-500 font-bold mt-2">Mobile: +91 93043 04189</p>
+               </div>
+               <div className="absolute bottom-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
             </div>
             
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50/50">
-                  <tr>
-                    {isTeacher && <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Student</th>}
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Details</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Amount</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-widest text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {studentPayments.map((pay) => {
-                    const student = students.find(s => s.id === pay.studentId);
-                    return (
-                      <tr key={pay.id} className="group hover:bg-indigo-50/30 transition-colors">
-                        {isTeacher && (
-                          <td className="px-6 py-5">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-800">{student?.name || 'Unknown'}</span>
-                              <span className="text-[10px] text-slate-400 uppercase font-black tracking-tighter">Batch {student?.batch || 'N/A'}</span>
-                            </div>
-                          </td>
-                        )}
-                        <td className="px-6 py-5">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-medium text-slate-700">{pay.description}</span>
-                            <span className="text-xs text-slate-400 flex items-center mt-0.5">
-                              <span className="mr-2">📅 {pay.date}</span>
-                              <span className="hidden sm:inline">💳 {pay.paymentMethod || 'Manual'}</span>
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span className="font-bold text-slate-900">₹{pay.amount.toLocaleString()}</span>
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          {isTeacher && pay.status === 'PENDING' ? (
-                            <button 
-                              onClick={() => handleApprove(pay.id)}
-                              className="text-xs bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-green-700 shadow-sm transition-all active:scale-95"
-                            >
-                              Approve
-                            </button>
-                          ) : (
-                            <div className="flex items-center justify-end">
-                              <span className={`w-2 h-2 rounded-full mr-2 ${
-                                pay.status === 'SUCCESS' ? 'bg-green-500' : 'bg-orange-500'
-                              }`}></span>
-                              <span className={`text-xs font-bold uppercase tracking-wider ${
-                                pay.status === 'SUCCESS' ? 'text-green-700' : 'text-orange-700'
-                              }`}>
-                                {pay.status}
-                              </span>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="bg-amber-50 p-6 rounded-[2rem] border border-amber-100 flex gap-4">
+               <span className="text-2xl">⚠️</span>
+               <p className="text-xs text-amber-800 font-medium leading-relaxed">
+                 After successful payment, please note your <strong>Transaction ID</strong> and take a <strong>Screenshot</strong> for Step 2.
+               </p>
             </div>
-            {studentPayments.length === 0 && (
-              <div className="p-12 text-center text-slate-400 font-medium">
-                <div className="text-4xl mb-2">💸</div>
-                No payment records found.
+          </div>
+
+          {/* Section 2: Upload Proof */}
+          <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 space-y-8 animate-fade-in">
+             <div className="flex items-center gap-5">
+              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-[1.5rem] flex items-center justify-center text-3xl font-black">2</div>
+              <div>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight">Upload Proof</h3>
+                <p className="text-sm font-medium text-slate-400">Submit receipt for verification</p>
               </div>
-            )}
+            </div>
+
+            <div 
+              onClick={() => setShowUploadModal(true)}
+              className="group h-64 border-4 border-dashed border-slate-100 rounded-[3rem] flex flex-col items-center justify-center hover:border-indigo-200 hover:bg-indigo-50/30 transition-all cursor-pointer relative overflow-hidden"
+            >
+               <div className="text-6xl mb-4 group-hover:scale-110 transition-transform">📄</div>
+               <p className="text-xl font-black text-slate-800 tracking-tight">Click to Upload Receipt</p>
+               <p className="text-sm text-slate-400 font-bold uppercase tracking-widest mt-1">Screenshot / PDF</p>
+               
+               {hasStudentPendingApproval && (
+                 <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
+                   <div className="w-16 h-16 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-2xl mb-4 animate-bounce">⏳</div>
+                   <p className="text-lg font-black text-slate-900 tracking-tight">Verification in Progress</p>
+                   <p className="text-xs text-slate-400 font-bold mt-1">Admin will approve shortly</p>
+                 </div>
+               )}
+            </div>
+
+            <div className="bg-indigo-50 p-6 rounded-[2rem] border border-indigo-100 flex gap-4">
+               <span className="text-2xl">💡</span>
+               <p className="text-xs text-indigo-800 font-medium leading-relaxed">
+                 Verification usually takes 2-4 hours. You will receive an automated message once approved.
+               </p>
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-4 flex items-center">
-              <span className="mr-2">💡</span> Official Payment Info
-            </h3>
-            <div className="space-y-4">
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Parents are requested to pay fees online via UPI to the number below. Transaction details are updated within 24 hours of approval.
-              </p>
-              <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
-                <div className="text-[10px] font-black text-indigo-400 uppercase mb-1 tracking-widest">Official UPI Phone</div>
-                <div className="text-lg font-black text-indigo-900 tracking-tight">+91 93043 04189</div>
-                <div className="text-[10px] text-indigo-500 mt-1 font-bold italic">Account: Raghubir Classes</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl text-xs font-bold text-slate-800 flex justify-between">
-                <span className="text-slate-400 uppercase">Support:</span>
-                <span>+91 84093 13191</span>
-              </div>
+      {/* Delinquent Students List for Teacher */}
+      {isTeacher && delinquentStudents.length > 0 && (
+        <section className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden animate-fade-in">
+          <div className="p-10 border-b border-slate-50 flex justify-between items-center">
+            <div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Unpaid Students</h2>
+              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-1">{currentMonthName} Billing Cycle</p>
             </div>
+            <button 
+              onClick={() => delinquentStudents.forEach(s => handleSendReminder(s.id))}
+              className="px-8 py-4 bg-red-600 text-white font-black rounded-2xl shadow-xl shadow-red-100 hover:bg-red-700 active:scale-95 transition-all text-sm uppercase tracking-widest"
+            >
+              Remind All ( {delinquentStudents.length} )
+            </button>
           </div>
-
-          {/* Teacher-only summary, or student personal summary */}
-          <div className="bg-slate-50 p-6 rounded-3xl border border-dashed border-slate-200">
-            {isTeacher ? (
-              <>
-                <h3 className="text-sm font-bold text-slate-600 mb-3">Pending Dues Summary</h3>
-                <div className="space-y-2">
-                  {delinquentStudents.slice(0, 3).map(s => (
-                    <div key={s.id} className="flex justify-between items-center text-xs">
-                      <span className="text-slate-500 truncate mr-2">{s.name}</span>
-                      <span className="text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded flex-shrink-0">₹5,000 Due</span>
-                    </div>
-                  ))}
-                  {delinquentStudents.length === 0 && (
-                    <p className="text-[10px] text-green-600 font-bold">All clear! No pending dues.</p>
-                  )}
-                  {delinquentStudents.length > 0 && (
-                    <button 
-                      onClick={() => setShowDelinquentModal(true)}
-                      className="w-full mt-4 text-[10px] font-bold text-indigo-600 hover:underline uppercase tracking-widest"
-                    >
-                      View All {delinquentStudents.length} Delinquent Students
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <h3 className="text-sm font-bold text-slate-600 mb-3">Next Due Date</h3>
-                <div className="p-4 bg-white rounded-2xl border border-slate-100">
-                   <p className="text-lg font-black text-slate-800">Dec 01, 2023</p>
-                   <p className="text-xs text-slate-400 mt-1 font-medium">December Cycle Fees: ₹5,000</p>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {delinquentStudents.map(student => (
+              <div key={student.id} className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 flex items-center justify-between group hover:shadow-lg transition-all">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center font-black text-slate-400 text-lg">
+                    {student.name.charAt(0)}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-800 tracking-tight">{student.name}</h4>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Batch {student.batch}</p>
+                  </div>
                 </div>
                 <button 
-                  onClick={() => setShowCheckout(true)}
-                  className="w-full mt-4 py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-indigo-100 transform active:scale-95"
+                  onClick={() => handleSendReminder(student.id)}
+                  disabled={sendingReminder === student.id}
+                  className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all ${
+                    sendingReminder === student.id ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white shadow-sm'
+                  }`}
                 >
-                  Pay Now
+                  {sendingReminder === student.id ? '...' : '✉️'}
                 </button>
-              </>
-            )}
+              </div>
+            ))}
           </div>
+        </section>
+      )}
+
+      {/* History Table */}
+      <div className="bg-white rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+        <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Transaction History</h2>
+          <div className="flex items-center gap-4">
+            {isTeacher && (
+              <select 
+                value={filterStudentId}
+                onChange={(e) => setFilterStudentId(e.target.value)}
+                className="px-6 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500 transition-all uppercase tracking-widest"
+              >
+                <option value="all">Global View</option>
+                {students.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            )}
+            <button 
+              onClick={exportTransactions}
+              className="px-6 py-3 bg-indigo-50 text-indigo-600 text-xs font-black rounded-2xl hover:bg-indigo-100 transition-colors flex items-center border border-indigo-100 uppercase tracking-widest"
+            >
+              📥 Export Data
+            </button>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50/50">
+              <tr>
+                {isTeacher && <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Student</th>}
+                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Details</th>
+                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Amount</th>
+                <th className="px-10 py-6 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {studentPayments.length === 0 ? (
+                <tr>
+                  <td colSpan={isTeacher ? 4 : 3} className="px-10 py-20 text-center text-slate-400 italic">No records matching your search.</td>
+                </tr>
+              ) : studentPayments.map((pay) => {
+                const student = students.find(s => s.id === pay.studentId);
+                return (
+                  <tr key={pay.id} className="group hover:bg-slate-50/80 transition-all">
+                    {isTeacher && (
+                      <td className="px-10 py-8">
+                        <div className="flex flex-col">
+                          <span className="font-black text-slate-800 text-lg tracking-tight leading-none mb-1">{student?.name || 'Unknown'}</span>
+                          <span className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Batch {student?.batch || 'N/A'}</span>
+                        </div>
+                      </td>
+                    )}
+                    <td className="px-10 py-8">
+                      <div className="flex flex-col">
+                        <span className="text-lg font-bold text-slate-700 tracking-tight leading-none mb-2">{pay.description}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">📅 {pay.date}</span>
+                          {pay.proofImage && (
+                            <button 
+                              onClick={() => setViewingProof(pay.proofImage!)}
+                              className="text-[10px] text-indigo-600 font-black uppercase tracking-widest hover:underline flex items-center gap-2"
+                            >
+                              🖼️ Show Receipt
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-10 py-8">
+                      <span className="font-black text-slate-900 text-xl tracking-tighter">₹{pay.amount.toLocaleString()}</span>
+                    </td>
+                    <td className="px-10 py-8 text-right">
+                      {isTeacher && pay.status === 'PENDING' ? (
+                        <button 
+                          onClick={() => handleApprove(pay.id)}
+                          className="text-xs bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-widest hover:bg-emerald-700 shadow-xl shadow-emerald-100 transition-all active:scale-95"
+                        >
+                          Approve
+                        </button>
+                      ) : (
+                        <div className="flex items-center justify-end">
+                          <span className={`w-3 h-3 rounded-full mr-3 ${
+                            pay.status === 'SUCCESS' ? 'bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'bg-orange-500'
+                          }`}></span>
+                          <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${
+                            pay.status === 'SUCCESS' ? 'text-emerald-700' : 'text-orange-700'
+                          }`}>
+                            {pay.status}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {showCheckout && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 animate-scale-up">
-            <div className="p-8 bg-slate-50/50 border-b flex justify-between items-center">
+      {/* Upload Modal (Action Area) */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-2xl z-[100] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-[4rem] shadow-2xl overflow-hidden border border-slate-100 animate-scale-up">
+            <div className="p-10 bg-slate-50/50 border-b flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-black text-slate-900">Secure Checkout</h2>
-                <p className="text-sm text-slate-500">Invoice #RCC-{Date.now().toString().slice(-6)}</p>
+                <h2 className="text-3xl font-black text-slate-900 tracking-tight leading-none">Submit Proof</h2>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest mt-2">Final Step for {currentMonthName}</p>
               </div>
               <button 
-                onClick={() => setShowCheckout(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors"
+                onClick={() => setShowUploadModal(false)}
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-white shadow-lg hover:bg-slate-100 transition-all"
               >✕</button>
             </div>
             
-            <div className="p-8 space-y-6">
-              <div className="bg-slate-50 rounded-2xl p-6 space-y-3 border border-slate-100">
-                <div className="flex justify-between font-bold text-slate-800">
-                  <span>Tuition Fees ({new Date().toLocaleString('default', { month: 'long' })})</span>
-                  <span>₹5,000.00</span>
-                </div>
-                <div className="pt-3 border-t border-slate-200 flex justify-between text-xl font-black text-slate-900">
-                  <span>Payable Total</span>
-                  <span>₹5,000.00</span>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest">Payment Method</label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button 
-                    onClick={() => setPaymentMethod('UPI')}
-                    className={`p-6 rounded-3xl border-2 transition-all ${paymentMethod === 'UPI' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-slate-100 hover:border-slate-200'}`}
-                  >
-                    <span className="text-2xl mb-1 block">📱</span>
-                    <span className="text-sm font-bold">UPI</span>
-                  </button>
-                  <button 
-                    onClick={() => setPaymentMethod('NET')}
-                    className={`p-6 rounded-3xl border-2 transition-all ${paymentMethod === 'NET' ? 'border-indigo-600 bg-indigo-50 shadow-md' : 'border-slate-100 hover:border-slate-200'}`}
-                  >
-                    <span className="text-2xl mb-1 block">🏦</span>
-                    <span className="text-sm font-bold">Net Bank</span>
-                  </button>
-                </div>
+            <div className="p-10 space-y-8">
+              <div className="bg-slate-900 rounded-[2.5rem] p-8 space-y-3 text-center text-white relative overflow-hidden">
+                <div className="text-4xl font-black tracking-tighter">₹5,000.00</div>
+                <div className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.4em]">Current Installment</div>
+                <div className="absolute top-0 left-0 w-20 h-20 bg-indigo-500/10 blur-2xl rounded-full"></div>
               </div>
 
-              {paymentMethod === 'UPI' && (
-                <div className="bg-green-50 p-5 rounded-2xl border border-green-100 text-center animate-fade-in">
-                  <p className="text-[10px] font-black text-green-700 mb-1 uppercase tracking-widest">Pay via PhonePe / GPay</p>
-                  <p className="text-2xl font-black text-green-900 tracking-tight">+91 93043 04189</p>
-                  <p className="text-[10px] text-green-600 mt-2 italic">Confirm after you complete the transfer</p>
+              <div className="space-y-4">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] px-6 mb-2">Transaction Screenshot</label>
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`relative cursor-pointer group border-4 border-dashed rounded-[3rem] p-12 text-center transition-all ${
+                    proofImage ? 'border-emerald-500 bg-emerald-50/30' : 'border-slate-100 hover:border-indigo-400 hover:bg-indigo-50/30'
+                  }`}
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    accept="image/*" 
+                    onChange={handleFileChange} 
+                  />
+                  {proofImage ? (
+                    <div className="flex flex-col items-center">
+                      <div className="relative group/img">
+                        <img src={proofImage} className="w-32 h-32 object-cover rounded-[2rem] mb-4 shadow-2xl" alt="Proof" />
+                        <div className="absolute inset-0 bg-red-600/0 group-hover/img:bg-red-600/40 rounded-[2rem] flex items-center justify-center transition-all opacity-0 group-hover/img:opacity-100">
+                           <span className="text-white font-black text-xs uppercase tracking-widest">Change</span>
+                        </div>
+                      </div>
+                      <span className="text-sm font-black text-emerald-700 tracking-tight">Receipt Attached ✓</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center">
+                      <div className="text-6xl mb-4 grayscale opacity-20 group-hover:grayscale-0 group-hover:opacity-100 transition-all">📸</div>
+                      <span className="text-xl font-black text-slate-800 tracking-tight">Tap to Choose File</span>
+                      <span className="text-[10px] text-slate-400 mt-2 uppercase font-black tracking-widest">JPEG or PNG format</span>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               <button 
-                onClick={handlePay}
-                disabled={paying}
-                className="w-full py-5 rounded-2xl font-black text-lg bg-indigo-600 text-white hover:bg-indigo-700 shadow-xl disabled:bg-slate-100 transition-all active:scale-95 flex items-center justify-center"
+                onClick={handleUploadProof}
+                disabled={paying || !proofImage}
+                className="w-full py-6 rounded-[2rem] font-black text-xl bg-indigo-600 text-white hover:bg-indigo-700 shadow-2xl shadow-indigo-200 disabled:opacity-20 disabled:grayscale transition-all active:scale-[0.98] flex items-center justify-center gap-4"
               >
                 {paying ? (
-                   <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Authorizing...
-                   </span>
-                ) : 'Confirm Payment ✓'}
+                  <>
+                    <span className="animate-spin text-3xl">⚙️</span>
+                    <span>Submitting...</span>
+                  </>
+                ) : 'Confirm Submission'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Delinquent Students Modal - Only for Teachers */}
-      {isTeacher && showDelinquentModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-lg z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 animate-scale-up flex flex-col h-[80vh]">
-            <div className="p-8 bg-slate-50/50 border-b flex justify-between items-center">
-              <div>
-                <h2 className="text-3xl font-black text-slate-900 tracking-tighter">Delinquent Students</h2>
-                <p className="text-sm text-slate-500 font-bold uppercase tracking-widest mt-1">{delinquentStudents.length} Students Pending Fees</p>
-              </div>
-              <button 
-                onClick={() => setShowDelinquentModal(false)}
-                className="w-12 h-12 flex items-center justify-center rounded-full bg-white shadow-sm border border-slate-200 hover:bg-slate-50 transition-colors"
-              >✕</button>
+      {/* Proof Viewer Modal */}
+      {viewingProof && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-3xl z-[200] flex items-center justify-center p-4 animate-fade-in" onClick={() => setViewingProof(null)}>
+          <div className="max-w-4xl w-full bg-white rounded-[4rem] overflow-hidden shadow-2xl animate-scale-up border border-white/20" onClick={e => e.stopPropagation()}>
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-black text-slate-800 uppercase tracking-[0.3em] text-xs">Verified Document Receipt</h3>
+              <button onClick={() => setViewingProof(null)} className="w-14 h-14 flex items-center justify-center rounded-full bg-white shadow-xl text-2xl">✕</button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {delinquentStudents.map(student => (
-                <div key={student.id} className="group bg-slate-50/50 hover:bg-white p-6 rounded-3xl border border-transparent hover:border-slate-200 transition-all flex items-center justify-between shadow-sm hover:shadow-xl">
-                  <div className="flex items-center gap-5">
-                    <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center text-xl font-black">
-                      {student.name.charAt(0)}
-                    </div>
-                    <div>
-                      <h4 className="font-black text-slate-800 text-lg">{student.name}</h4>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Batch {student.batch} • Class {student.class}</p>
-                      <div className="mt-1 flex gap-2">
-                        <span className="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-black rounded-lg uppercase">₹5,000 Pending</span>
-                        {payments.some(p => p.studentId === student.id && p.status === 'PENDING') && (
-                          <span className="px-2 py-0.5 bg-orange-50 text-orange-600 text-[10px] font-black rounded-lg uppercase">Waiting Approval</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => navigate('/messages')}
-                      className="w-12 h-12 flex items-center justify-center bg-white rounded-2xl text-xl shadow-sm border border-slate-100 hover:bg-indigo-600 hover:text-white transition-all transform active:scale-90"
-                      title="Send Reminder"
-                    >💬</button>
-                    <a 
-                      href={`tel:${student.mobile}`}
-                      className="w-12 h-12 flex items-center justify-center bg-white rounded-2xl text-xl shadow-sm border border-slate-100 hover:bg-green-600 hover:text-white transition-all transform active:scale-90"
-                      title="Call Parent"
-                    >📞</a>
-                  </div>
-                </div>
-              ))}
-
-              {delinquentStudents.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full py-12 text-center">
-                  <div className="text-6xl mb-4">🏆</div>
-                  <h3 className="text-xl font-black text-slate-800">Perfect Record!</h3>
-                  <p className="text-slate-500 max-w-xs mx-auto">All students have cleared their dues for the current cycle.</p>
-                </div>
-              )}
+            <div className="p-4 bg-slate-100 flex items-center justify-center min-h-[500px]">
+              <img src={viewingProof} className="max-w-full max-h-[75vh] rounded-[2.5rem] shadow-2xl border-[10px] border-white" alt="Payment Proof" />
             </div>
-
-            <div className="p-8 bg-slate-50/50 border-t flex items-center justify-between">
-              <p className="text-xs text-slate-400 font-bold italic">Total estimated pending: ₹{(delinquentStudents.length * 5000).toLocaleString()}</p>
+            <div className="p-10 flex justify-center">
               <button 
-                className="px-6 py-2 bg-indigo-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-indigo-700 transition-all shadow-lg"
-                onClick={() => {
-                  alert("Bulk SMS Reminders feature coming soon!");
-                }}
-              >
-                Bulk Remind ⚡
-              </button>
+                onClick={() => setViewingProof(null)}
+                className="px-16 py-5 bg-slate-900 text-white font-black uppercase tracking-[0.3em] rounded-[2rem] shadow-2xl active:scale-95 transition-all text-sm"
+              > Close Preview </button>
             </div>
           </div>
         </div>

@@ -67,6 +67,19 @@ export const storageService = {
     localStorage.setItem(KEYS.MESSAGES, JSON.stringify(messages));
   },
 
+  sendAutomatedReminder: (studentId: string, month: string) => {
+    const messages = storageService.getMessages();
+    const reminder: Message = {
+      id: `rem-${Date.now()}`,
+      senderId: 't1', // Teacher ID
+      receiverId: studentId,
+      content: `⚠️ AUTOMATED REMINDER: Your tuition fee for ${month} is currently pending. Please complete the online payment and upload the screenshot in the Payments section immediately to avoid late fees.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isRead: false
+    };
+    storageService.saveMessages([...messages, reminder]);
+  },
+
   getAnnouncements: (): Announcement[] => {
     const data = localStorage.getItem(KEYS.ANNOUNCEMENTS);
     return data ? JSON.parse(data) : DEFAULT_ANNOUNCEMENTS;

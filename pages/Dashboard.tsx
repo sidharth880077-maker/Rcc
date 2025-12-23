@@ -26,6 +26,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     pendingPayments: 0
   });
 
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const hasPendingDues = !isTeacher && !storageService.getPayments().some(p => p.studentId === user.id && p.status === 'SUCCESS' && p.date.startsWith(currentMonthKey));
+
   useEffect(() => {
     const students = storageService.getStudents();
     const attendance = storageService.getAttendance();
@@ -114,207 +117,239 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   };
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-800">Welcome, {user.name}!</h1>
-        <p className="text-slate-500">Here's what's happening at RCC today.</p>
+    <div className="space-y-8 animate-fade-in max-w-7xl mx-auto">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none">RCC Hub</h1>
+          <p className="text-slate-500 font-medium mt-2 capitalize">Welcome back, {user.role.toLowerCase()} {user.name}.</p>
+        </div>
+        {hasPendingDues && (
+          <div className="bg-red-50 border-2 border-red-200 px-6 py-4 rounded-[2rem] flex items-center gap-4 animate-pulse">
+             <span className="text-2xl">🚨</span>
+             <div>
+               <p className="text-red-800 font-black text-xs uppercase tracking-widest">Action Required</p>
+               <p className="text-red-600 text-sm font-bold tracking-tight">Tuition Fee for {new Date().toLocaleString('default', { month: 'long' })} is Pending.</p>
+             </div>
+             <button 
+                onClick={() => navigate('/payments')}
+                className="bg-red-600 text-white px-5 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100"
+             >
+               Pay Now
+             </button>
+          </div>
+        )}
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {isTeacher && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center">
-            <div className="p-3 bg-blue-100 text-blue-600 rounded-xl mr-4 text-2xl">👥</div>
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 flex items-center group hover:-translate-y-1 transition-all">
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-3xl mr-6 flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 transition-transform">👥</div>
             <div>
-              <p className="text-sm font-medium text-slate-500">Total Students</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.totalStudents}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Students</p>
+              <p className="text-3xl font-black text-slate-900 tracking-tighter">{stats.totalStudents}</p>
             </div>
           </div>
         )}
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center">
-          <div className="p-3 bg-green-100 text-green-600 rounded-xl mr-4 text-2xl">📈</div>
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 flex items-center group hover:-translate-y-1 transition-all">
+          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-3xl mr-6 flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 transition-transform">📈</div>
           <div>
-            <p className="text-sm font-medium text-slate-500">Attendance Rate</p>
-            <p className="text-2xl font-bold text-slate-900">{stats.attendanceRate}%</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Attendance</p>
+            <p className="text-3xl font-black text-slate-900 tracking-tighter">{stats.attendanceRate}%</p>
           </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center">
-          <div className="p-3 bg-orange-100 text-orange-600 rounded-xl mr-4 text-2xl">📝</div>
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 flex items-center group hover:-translate-y-1 transition-all">
+          <div className="w-16 h-16 bg-orange-50 text-orange-600 rounded-3xl mr-6 flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 transition-transform">📝</div>
           <div>
-            <p className="text-sm font-medium text-slate-500">Avg. Test Score</p>
-            <p className="text-2xl font-bold text-slate-900">{stats.avgScore}%</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Performance</p>
+            <p className="text-3xl font-black text-slate-900 tracking-tighter">{stats.avgScore}%</p>
           </div>
         </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center">
-          <div className="p-3 bg-red-100 text-red-600 rounded-xl mr-4 text-2xl">💰</div>
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl shadow-slate-200/50 border border-slate-100 flex items-center group hover:-translate-y-1 transition-all">
+          <div className="w-16 h-16 bg-red-50 text-red-600 rounded-3xl mr-6 flex items-center justify-center text-3xl shadow-inner group-hover:scale-110 transition-transform">💰</div>
           <div>
-            <p className="text-sm font-medium text-slate-500">{isTeacher ? 'Pending Appr.' : 'Pending Dues'}</p>
-            <p className="text-2xl font-bold text-slate-900">{stats.pendingPayments}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Dues Status</p>
+            <p className="text-3xl font-black text-slate-900 tracking-tighter">{stats.pendingPayments}</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-slate-800">Recent Announcements</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <section className="lg:col-span-2 bg-white rounded-[3rem] shadow-2xl shadow-slate-200/50 border border-slate-100 p-10">
+          <div className="flex justify-between items-center mb-10">
+            <div>
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Class Announcements</h2>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Official RCC Broadcast</p>
+            </div>
             {isTeacher && (
               <button 
                 onClick={handleAddAnnouncement}
-                className="text-xs text-indigo-600 font-bold hover:underline"
+                className="w-12 h-12 bg-indigo-50 text-indigo-600 font-black rounded-2xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm flex items-center justify-center text-2xl active:scale-90"
               >
-                + Post New
+                +
               </button>
             )}
           </div>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {announcements.length > 0 ? announcements.map((ann) => (
-              <div key={ann.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 group">
-                <div className="flex justify-between items-start mb-1">
-                  <h3 className="font-semibold text-slate-700">{ann.title}</h3>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-slate-400">{ann.date}</span>
-                    {isTeacher && (
-                      <div className="hidden group-hover:flex space-x-2">
-                        <button onClick={() => handleEditAnnouncement(ann)} className="text-[10px] text-indigo-600 hover:font-bold">Edit</button>
-                        <button onClick={() => deleteAnnouncement(ann.id)} className="text-[10px] text-red-600 hover:font-bold">Del</button>
-                      </div>
-                    )}
+              <div key={ann.id} className="p-8 bg-slate-50/50 rounded-[2rem] border border-slate-50 group hover:bg-white hover:shadow-2xl hover:shadow-slate-200/50 transition-all">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-black text-slate-800 tracking-tight">{ann.title}</h3>
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mt-1">{ann.date}</p>
                   </div>
+                  {isTeacher && (
+                    <div className="hidden group-hover:flex space-x-2">
+                      <button onClick={() => handleEditAnnouncement(ann)} className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xs">✏️</button>
+                      <button onClick={() => deleteAnnouncement(ann.id)} className="w-10 h-10 bg-red-50 text-red-600 rounded-xl flex items-center justify-center text-xs">🗑️</button>
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm text-slate-600">{ann.message}</p>
+                <p className="text-slate-600 text-lg leading-relaxed font-medium">{ann.message}</p>
               </div>
             )) : (
-              <div className="p-8 text-center text-slate-400 italic">No announcements yet.</div>
+              <div className="py-20 text-center opacity-30 grayscale flex flex-col items-center">
+                 <div className="text-8xl mb-6">📭</div>
+                 <p className="text-xl font-black tracking-tighter">Quiet inbox today.</p>
+              </div>
             )}
           </div>
         </section>
 
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-slate-800">Upcoming Schedule</h2>
-            {isTeacher && (
-              <button 
-                onClick={handleAddSchedule}
-                className="text-xs text-indigo-600 font-bold hover:underline"
-              >
-                + Add
-              </button>
-            )}
-          </div>
-          <div className="space-y-4">
-            {schedule.map((cls) => (
-              <div key={cls.id} className="flex items-center space-x-4 group">
-                <div className="w-16 text-xs font-bold text-indigo-600 uppercase tracking-tighter">{cls.time}</div>
-                <div className="flex-1 pb-4 border-b border-slate-100 flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold text-slate-800">{cls.subject}</div>
-                    <div className="text-xs text-slate-500">{cls.teacher}</div>
+        <section className="bg-slate-900 rounded-[3rem] shadow-2xl p-10 text-white flex flex-col justify-between overflow-hidden relative">
+          <div className="relative z-10">
+            <div className="flex justify-between items-center mb-10">
+              <h2 className="text-2xl font-black tracking-tight">Live Schedule</h2>
+              {isTeacher && (
+                <button 
+                  onClick={handleAddSchedule}
+                  className="w-12 h-12 bg-white/10 text-white font-black rounded-2xl hover:bg-white/20 transition-all flex items-center justify-center text-2xl"
+                >
+                  +
+                </button>
+              )}
+            </div>
+            <div className="space-y-8">
+              {schedule.map((cls) => (
+                <div key={cls.id} className="flex items-start space-x-6 group">
+                  <div className="w-20 text-[10px] font-black text-indigo-400 uppercase tracking-widest pt-1">{cls.time}</div>
+                  <div className="flex-1 pb-6 border-b border-white/5 flex justify-between items-start group-last:border-none">
+                    <div>
+                      <div className="text-xl font-black tracking-tight mb-1">{cls.subject}</div>
+                      <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">{cls.teacher}</div>
+                    </div>
+                    {isTeacher && (
+                      <button 
+                        onClick={() => handleEditSchedule(cls)}
+                        className="opacity-0 group-hover:opacity-100 w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center text-xs hover:bg-white/20 transition-all"
+                      >
+                        ✏️
+                      </button>
+                    )}
                   </div>
-                  {isTeacher && (
-                    <button 
-                      onClick={() => handleEditSchedule(cls)}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-slate-400 hover:text-indigo-600 transition-opacity"
-                    >
-                      Edit
-                    </button>
-                  )}
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+          
           <button 
             onClick={() => navigate('/calendar')}
-            className="mt-6 w-full py-2 bg-indigo-50 text-indigo-600 text-sm font-semibold rounded-lg hover:bg-indigo-100 transition-colors"
+            className="mt-12 w-full py-5 bg-indigo-600 text-white text-sm font-black uppercase tracking-[0.2em] rounded-2xl shadow-2xl shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-[0.98] z-10"
           >
-            View Full Calendar
+            Full Calendar
           </button>
+          
+          <div className="absolute top-0 right-0 -translate-y-1/2 translate-x-1/2 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl"></div>
         </section>
       </div>
 
       {showScheduleModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
-            <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
-              <h2 className="font-bold text-slate-800">{editingScheduleItem?.id ? 'Edit Class' : 'Add Class'}</h2>
-              <button onClick={() => setShowScheduleModal(false)}>✕</button>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] shadow-2xl overflow-hidden animate-scale-up border border-white/20">
+            <div className="p-8 bg-slate-50/50 border-b flex justify-between items-center">
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">{editingScheduleItem?.id ? 'Adjust Slot' : 'New Slot'}</h2>
+              <button onClick={() => setShowScheduleModal(false)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-xl">✕</button>
             </div>
-            <form onSubmit={saveSchedule} className="p-6 space-y-4">
+            <form onSubmit={saveSchedule} className="p-8 space-y-6">
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Time</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Time Slot</label>
                 <input 
                   type="text" 
                   placeholder="e.g. 04:00 PM"
                   required
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-bold transition-all"
                   value={editingScheduleItem?.time}
                   onChange={e => setEditingScheduleItem({...editingScheduleItem!, time: e.target.value})}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Subject</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Topic / Subject</label>
                 <input 
                   type="text"
                   required
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-bold transition-all"
                   value={editingScheduleItem?.subject}
                   onChange={e => setEditingScheduleItem({...editingScheduleItem!, subject: e.target.value})}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Teacher</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Instructor</label>
                 <input 
                   type="text"
                   required
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-bold transition-all"
                   value={editingScheduleItem?.teacher}
                   onChange={e => setEditingScheduleItem({...editingScheduleItem!, teacher: e.target.value})}
                 />
               </div>
-              <button className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg">Save Schedule</button>
+              <button className="w-full py-5 bg-indigo-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]">
+                Save Schedule
+              </button>
             </form>
           </div>
         </div>
       )}
 
       {showAnnModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
-            <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
-              <h2 className="font-bold text-slate-800">{editingAnnouncement?.id ? 'Edit Announcement' : 'New Announcement'}</h2>
-              <button onClick={() => setShowAnnModal(false)}>✕</button>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-scale-up border border-white/20">
+            <div className="p-8 bg-slate-50/50 border-b flex justify-between items-center">
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">{editingAnnouncement?.id ? 'Edit Broadcast' : 'New Broadcast'}</h2>
+              <button onClick={() => setShowAnnModal(false)} className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-xl">✕</button>
             </div>
-            <form onSubmit={saveAnnouncement} className="p-6 space-y-4">
+            <form onSubmit={saveAnnouncement} className="p-8 space-y-6">
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Title</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Headline</label>
                 <input 
                   type="text" 
                   required
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-black text-lg transition-all"
                   value={editingAnnouncement?.title}
                   onChange={e => setEditingAnnouncement({...editingAnnouncement!, title: e.target.value})}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Date</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Date</label>
                 <input 
                   type="date"
                   required
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-bold transition-all"
                   value={editingAnnouncement?.date}
                   onChange={e => setEditingAnnouncement({...editingAnnouncement!, date: e.target.value})}
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Message</label>
+                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest px-4 mb-2">Content</label>
                 <textarea 
                   required
                   rows={4}
-                  className="w-full px-4 py-2 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-6 py-4 bg-slate-50 border-2 border-transparent focus:border-indigo-500 focus:bg-white rounded-2xl outline-none font-medium leading-relaxed transition-all resize-none"
                   value={editingAnnouncement?.message}
                   onChange={e => setEditingAnnouncement({...editingAnnouncement!, message: e.target.value})}
                 />
               </div>
-              <button className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg">Publish Announcement</button>
+              <button className="w-full py-6 bg-indigo-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-2xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]">
+                Publish Update
+              </button>
             </form>
           </div>
         </div>
