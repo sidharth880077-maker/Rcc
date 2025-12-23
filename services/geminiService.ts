@@ -2,8 +2,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { TestRecord, AttendanceRecord } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const getStudentPerformanceInsights = async (
   studentName: string,
   tests: TestRecord[],
@@ -23,10 +21,13 @@ export const getStudentPerformanceInsights = async (
   `;
 
   try {
+    // Fix: Always initialize GoogleGenAI inside the function using process.env.API_KEY directly
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
+    // Fix: Use the .text property directly instead of calling it as a method
     return response.text || "Insight generation failed.";
   } catch (error) {
     console.error("Error generating insights:", error);
